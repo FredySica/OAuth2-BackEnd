@@ -1,0 +1,77 @@
+package com.alpha.oauth2.backend.apirest.models.services;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.alpha.oauth2.backend.apirest.models.dao.IUsuarioDao;
+import com.alpha.oauth2.backend.apirest.models.entity.Usuario;
+
+@Service    //Con esta forma se registra como un beans de spring dentro del contenedor
+public class UsuarioService implements IUsuarioService, UserDetailsService { //En este caso se implementa nuestra consulta JPA que retorna la info del usuario por su username y la interfaz de spring 
+	//implementacion de log
+	private Logger logger = LoggerFactory.getLogger(UsuarioService.class);
+	
+	@Autowired //para inyectar el repositorio
+	private IUsuarioDao usuarioDao;
+	
+
+	@Override
+	@Transactional(readOnly=true)     //Como es solo de consulta por el username sera solo readonly
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		
+		
+		//Obtener el usuario atravez del username, 
+		//utilizando el usuarioDao
+		Usuario usuario = usuarioDao.findByUsername(username);
+		
+		//Implementacion de log
+		if (usuario == null) {
+			logger.error("Error en el login: no existe el usuario '" + username + "' en el sistema.");
+			throw new UsernameNotFoundException("Error en el login: no existe el usuario '" + username + "' en el sistema.");
+		}
+		
+		
+		//El metodo retorna un UserDetails que seria el usuario de SpringSecurity
+		//entonces creamos la instancia del User() que se compone de:
+		//username: usuario, que lo obtendremos del entity usuario
+		//password: password, que lo obtendremos del entity usuario
+		//Enabled:  estado boolean, que lo obtendremos del entity usuario
+		//accountnonexpired: true
+		//credentialsNonExpired: true
+		//accountNonLocked: true
+		//authorities: los roles, atraves del usuario con la relacion ManyToMany, 
+		//             para convertir usuario.getRoles() a un list grantedAuthority usamos un stream, pasando por un map y retornando como un list con collect
+		List<GrantedAuthority> authorities = usuario.getRoles()
+											 .stream()
+											 .map(role -> new SimpleGrantedAuthority(role.getNombre()))
+											 .peek(authority -> logger.info("Role:" + authority.getAuthority())) //peek, es una funcion anonima o de flecha, una expresion lamda
+											 .collect(Collectors.toList());
+		return new User(usuario.getUsername(), usuario.getPassword(), usuario.getEnabled(), true, true, true, authorities);
+	}
+
+
+	@Override
+	public Usuario findByUsername(String username) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+
+	//@Override
+	//public Usuario findByUsername(String username) {
+	//	return usuarioDao.findByUsername(username);  //Obteniendo el objeto usuario completo
+	//}
+
+}

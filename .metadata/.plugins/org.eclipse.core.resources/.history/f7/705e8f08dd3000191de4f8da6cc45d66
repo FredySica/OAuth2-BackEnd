@@ -1,0 +1,11 @@
+package com.alpha.oauth2.backend.apirest.models.services;
+
+import com.alpha.oauth2.backend.apirest.models.entity.Usuario;
+
+public interface IUsuarioService {
+	//Implementando metodo personalizado con JPA Repository
+	//Este metodo implica: find = Buscar, By = where, Username = 'parametro'
+	//Implicito es: "select u from Usuario u where u.username = ?1"
+	public Usuario findByUsername(String username);
+
+}

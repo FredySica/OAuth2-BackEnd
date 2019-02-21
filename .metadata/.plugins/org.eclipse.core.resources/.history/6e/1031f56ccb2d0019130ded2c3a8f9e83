@@ -1,0 +1,5 @@
+package com.alpha.oauth2.backend.apirest.auth;
+
+public class JwtConfig {
+
+}

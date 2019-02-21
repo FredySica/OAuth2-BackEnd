@@ -1,0 +1,108 @@
+package com.alpha.oauth2.backend.apirest.auth;
+
+import java.util.Arrays;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.config.annotation.configurers.ClientDetailsServiceConfigurer;
+import org.springframework.security.oauth2.config.annotation.web.configuration.AuthorizationServerConfigurerAdapter;
+import org.springframework.security.oauth2.config.annotation.web.configuration.EnableAuthorizationServer;
+import org.springframework.security.oauth2.config.annotation.web.configurers.AuthorizationServerEndpointsConfigurer;
+import org.springframework.security.oauth2.config.annotation.web.configurers.AuthorizationServerSecurityConfigurer;
+import org.springframework.security.oauth2.provider.token.TokenEnhancerChain;
+import org.springframework.security.oauth2.provider.token.store.JwtAccessTokenConverter;
+import org.springframework.security.oauth2.provider.token.store.JwtTokenStore;
+
+
+@Configuration   				//Enmarcando como configuracion
+@EnableAuthorizationServer    	//Habilitamos el AuthorizationServer
+public class AuthorizationServerConfig extends AuthorizationServerConfigurerAdapter
+ {
+	@Autowired    //Considerado que se subio al contexto con un @Bean solo lo invocamos
+	private BCryptPasswordEncoder passwordEncoder;
+	
+	//Inyectamos el authentication manager, con su configuracion de usuarios y roles.
+	//Es necesario para que el authorizationServer lo pueda usar para el proceso de Login
+	@Autowired       
+	@Qualifier("authenticationManager")   //Con el qualifier se indica el nombre del bean que queremos importar en caso de tener mas instancias del tipo authenticationManager
+	private AuthenticationManager authenticationManager;
+	
+	//Inyectamos la informacion adicional del Token
+	@Autowired
+	private InfoAdicionalToken infoAdicionalToken;
+	
+	//Configurando los permisos de nuestros EndPoints, nuestras rutas de acceso pero de SpringSecurityOAuth2.
+	//Tenemos dos endpoints en el authorization server, uno para autenticarnos, para iniciar sesion y se encarga de generar el token y enviarlo al usuario
+	//Y esa ruta tiene que ser publica, ya que todos podran iniciar sesion, autenticarse y recibir un token
+	@Override
+	public void configure(AuthorizationServerSecurityConfigurer security) throws Exception {
+		//Estos dos endpoints esta protegidos por: Header Authorization Basic = usando las autenticaciones del cliente que son "Client Id + Client secret"
+		//(similar al token que se envia como Beerer)
+		security.tokenKeyAccess("permiteAll()")   	//Dando permiso a cualquier usuario a autenticarse (Endpoint de login: /oauth/token/)
+		.checkTokenAccess("isAuthenticated()");		//Dando permiso al endpoint que se encarga de validar o chequear el token que se esta enviando (Endpoint que verifica el token y su firma: /oauth/check_token), lo dejaremos definido como "solo pueden ingresar a esta ruta los autenticados" 
+	}
+	
+	
+	//Con este metodo configuraremos las aplicaciones clientes que se conectaran a nuestro servicio Rest
+	@Override
+	public void configure(ClientDetailsServiceConfigurer clients) throws Exception {
+		//Definicion del cliente
+		clients.inMemory()  //Definicion del tipo de almacenamiento
+		.withClient("angularapp") 							//Corresponde al nombre de la app
+		.secret(passwordEncoder.encode("12345"))			//Contraseña, aprovechando inyeccion de los beans inyectamos encriptacion con passwordEncoder
+		.scopes("read","write")								//Corresponde al alcance del usuario, daremos lectura y escritura
+		.authorizedGrantTypes("password","refresh_token") 	//El tipo de consecion que tendra nuestra autenticacion, en nuestro caso sera con password ( password: cuando los users existen en nuestra app, authorizationCode: atraves de un codigo de autorizacion, porClienteIdyPassword: Requerida por aplicaciones publicas sin mayor seguridad, Refresh_token: permite obtener un token de acceso renovado y continuar accediendo a los recursos protegidos)
+		.accessTokenValiditySeconds(3600)					//Configuracion de validez, caducidad.   Definicion en milisegundos 3600 = 1 hora
+		.refreshTokenValiditySeconds(3600);					//Configuracion de validez de refresh token, caducidad.   Definicion en milisegundos 3600 = 1 hora
+	}
+			
+	
+	//<<<- - - - - -   METODOS   - - - - - ->>>
+	
+	//Configurando el EndPoint del Authorization Server
+	//Se encarga de todo el proceso de autenticacion y de validar el token
+	//Cada vez que iniciamos sesion enviamos nuestro usuario y contraseña y si todo sale bien
+	//realiza la autenticacion, genera el token, se lo entrega al usuario y con ese token puede acceder a las paginas y recursos de nuestra aplicacion backend
+	//pero para eso, para poder acceder se tiene que validar.   Y eso se realiza en Endpoints en unas rutas que maneja el servidor de autorizacion.
+	//tanto para el login autenticacion donde genera el token y tambien para el proceso de validacion(validar el token y su firma)
+	@Override
+	public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+		
+		//Definicion de informacion adicional en el JWT
+		//TokenEnhancerChain es una cadena que une la informacion del token por defecto con la informacion adicional
+		TokenEnhancerChain tokenEnhancerChain = new TokenEnhancerChain();
+		//El metodo SetTokenEnhancers espera un listado, por eso convertimos
+		tokenEnhancerChain.setTokenEnhancers(Arrays.asList( infoAdicionalToken, accessTokenConverter()));
+		
+		endpoints.authenticationManager(authenticationManager)   //primero registramos el autentication manager
+		.tokenStore(tokenStore()) 								 //tercero definimos el store
+		.accessTokenConverter(accessTokenConverter())			 //segundo registramos el accesstokenconverter ( Que es un componente, es el encargado de manejar varias cosas relacionados al token, al JWT, como por ejemplo: almacenar los datos de autenticacion del usuario como username, los roles y cualquier info extra que queramos guardar como los CLAIMS y que no sea sensitivo.   Tambien decodifica para que el autentication manager mediante OAuth2 pueda realizar el proceso de autenticacion y validar el token.)
+		.tokenEnhancer(tokenEnhancerChain);
+		
+	}
+	
+	//Este metodo no es necesario, el Endpoints lo tiene implicito cuando se trata de un tipo JwtTokenStore 
+	//genera el constructor basado en un JwtAccessTokenConverter que es lo mismo que hacemos aca 
+	@Bean
+	public JwtTokenStore tokenStore() {
+		return new JwtTokenStore(accessTokenConverter());
+	}
+
+	//Este metodo traduce toda la informacion para codificar y decodificar los datos
+	@Bean
+	public JwtAccessTokenConverter accessTokenConverter() {
+		JwtAccessTokenConverter jwtAccessTokenConverter = new JwtAccessTokenConverter();
+		// Asignacion de certificacion MAC
+		// jwtAccessTokenConverter.setSigningKey(JwtConfig.LLAVE_SECRETA);
+
+		// Asignacion de certificacion RSA
+		jwtAccessTokenConverter.setSigningKey(JwtConfig.RSA_PRIVADA);  //El que firma es la llave privada.
+		jwtAccessTokenConverter.setVerifierKey(JwtConfig.RSA_PUBLICA); //El que valida, verifica es la publica.
+		return jwtAccessTokenConverter;
+	}
+
+}

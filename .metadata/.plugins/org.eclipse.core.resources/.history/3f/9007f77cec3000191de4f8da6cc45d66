@@ -1,0 +1,55 @@
+package com.alpha.oauth2.backend.apirest.auth;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+
+@Configuration
+public class SpringSecurityConfig extends WebSecurityConfigurerAdapter {
+
+	@Autowired   //Importamos UserDetailsService la interface de SpringSecurity
+	private UserDetailsService usuarioService;
+	
+
+	//Para dar mas seguridad implementamos BCrypt
+
+	@Bean   //Aplicamos bean para metodos que se guardan en el contenedor, luego con autowired lo podemos mandar a llamar
+	public BCryptPasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder(); 	//Retorna un BCryptPasswordEncoder
+	}
+	
+	
+	//Registra en el AuthenticationManager de Spring Security el servicio usuarioService para autenticar
+	@Override
+	@Autowired //para inyectar AuthenticationManagerBuilder auth
+	protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		auth.userDetailsService(this.usuarioService).passwordEncoder(passwordEncoder());
+	}
+
+
+	@Bean("authenticationManager")   //Asignando nombre directamente a un Bean, por defecto es el mismo nombre del metodo que lo genera
+	@Override
+	protected AuthenticationManager authenticationManager() throws Exception {
+		return super.authenticationManager();
+	}
+	
+	//Con este metodo implementamos todas las reglas de seguridad de nuestros EndPoint(rutas a recursos) por el lado de spring security standard
+	@Override
+	public void configure(HttpSecurity http) throws Exception {
+		http.authorizeRequests().antMatchers(HttpMethod.GET, "/api/clientes").permitAll()//Definiendo los recursos publicos con pemiteAll()
+		.anyRequest().authenticated()													//Cualquier otro recurso debera de autenticarse para accesarlo
+		.and()																			//y...(añadiendo mas reglas)
+		.csrf().disable()																//deshabilitamos csrf(Cross-site request forgery o falsificacion de peticion en sitios cruzados), esta opcion protege nuestros formularios atraves de un token, pero como estamos trabajando por el lado de angular con un front end separado no necesitamos esta opcion. 
+		.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);	//deshabilitamos el manejo de sesion en la autenticacion por el lado de springsecurity lo definiremos STATELESS ya que vamos a trabajar con token.    Con token no necesitamos sesiones, ya que guardamos la informacion del usuario en el lado del cliente en el token y no por el lado del servidor.     SessionCreationPolicy es un enum
+	}
+
+	
+}

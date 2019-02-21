@@ -1,0 +1,5 @@
+package com.alpha.oauth2.backend.apirest.models.services;
+
+public interface IUsuarioService {
+	public Usuario findByUsername(String username);
+}
